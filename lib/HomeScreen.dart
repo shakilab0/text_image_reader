@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:google_ml_kit/google_ml_kit.dart';
 import 'dart:ui' as ui;
 
+import 'package:text_image_reader/face_display_page.dart';
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -16,6 +18,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String _resultText = '';
   List<Face> _faces = [];
   ui.Image? iimage;
+  List<ui.Image>? croppedFaces;
 
   Future pickImage(ImageSource source) async {
     final image = await ImagePicker().pickImage(source: source);
@@ -56,7 +59,9 @@ class _HomeScreenState extends State<HomeScreen> {
         // enableClassification: true
       ));
       final faces = await faceDetector.processImage(inputImage);
+       final _croppedFaces = await _cropFaces(_image!, faces);
       setState(() {
+        croppedFaces = _croppedFaces;
         _faces = faces;
       });
 
@@ -77,6 +82,32 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     return resultText;
   }
+
+  Future<List<ui.Image>> _cropFaces(File imageFile, List<Face> faces) async {
+    final bytes = await imageFile.readAsBytes();
+    final originalImage = await decodeImageFromList(bytes);
+
+    final List<ui.Image> croppedFaces = [];
+    for (var face in faces) {
+      final faceRect = face.boundingBox;
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder, faceRect);
+
+      canvas.drawImageRect(
+        originalImage,
+        faceRect,
+        Rect.fromLTWH(0, 0, faceRect.width, faceRect.height),
+        Paint(),
+      );
+
+      final picture = recorder.endRecording();
+      final img = await picture.toImage(faceRect.width.toInt(), faceRect.height.toInt());
+      croppedFaces.add(img);
+    }
+
+    return croppedFaces;
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -117,6 +148,20 @@ class _HomeScreenState extends State<HomeScreen> {
             Text(_resultText),
             SizedBox(height: 20),
             Text('Faces detected: ${_faces.length}'),
+            ElevatedButton(
+              onPressed: () {
+                if(croppedFaces != null){
+                  if (_faces.isNotEmpty) {
+                    Navigator.push(context, MaterialPageRoute(
+                        builder: (context) => FaceDisplayPage(croppedFaces: croppedFaces!),
+                      ),
+                    );
+                  }
+                }
+
+              },
+              child: Text('next'),
+            ),
           ],
         ),
       ),
