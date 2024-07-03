@@ -1,16 +1,17 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'package:google_ml_kit/google_ml_kit.dart';
 import 'dart:ui' as ui;
-
 import 'package:text_image_reader/face_display_page.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  _HomeScreenState createState() => _HomeScreenState();
+  State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
@@ -18,19 +19,19 @@ class _HomeScreenState extends State<HomeScreen> {
   String _resultText = '';
   List<Face> _faces = [];
   ui.Image? iimage;
-  List<ui.Image>? croppedFaces;
+  List<ui.Image> croppedFaces = [];
+  List<Uint8List> croppedFacesData = [];
 
   Future pickImage(ImageSource source) async {
     final image = await ImagePicker().pickImage(source: source);
     if (image == null) return;
 
     final imageTemp = File(image.path);
-
-    setState(() async {
+    setState(()  {
       _image = imageTemp;
       _performOCR();
-      await _loadImage(imageTemp);
-      await _detectFaces();
+      _loadImage(imageTemp);
+      _detectFaces();
     });
   }
 
@@ -51,17 +52,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Future _detectFaces() async {
     if (_image != null) {
       final inputImage = InputImage.fromFile(_image!);
-      final faceDetector = GoogleMlKit.vision.faceDetector(FaceDetectorOptions(
-        // mode: FaceDetectorMode.accurate,
-        // enableLandmarks: true,
-        // enableContours: true,
-        // enableTracking: true,
-        // enableClassification: true
-      ));
+      final faceDetector = GoogleMlKit.vision.faceDetector(FaceDetectorOptions());
       final faces = await faceDetector.processImage(inputImage);
-       final _croppedFaces = await _cropFaces(_image!, faces);
+       await _cropFaces(_image!, faces);
       setState(() {
-        croppedFaces = _croppedFaces;
         _faces = faces;
       });
 
@@ -83,11 +77,10 @@ class _HomeScreenState extends State<HomeScreen> {
     return resultText;
   }
 
-  Future<List<ui.Image>> _cropFaces(File imageFile, List<Face> faces) async {
+  Future<void> _cropFaces(File imageFile, List<Face> faces) async {
     final bytes = await imageFile.readAsBytes();
     final originalImage = await decodeImageFromList(bytes);
 
-    final List<ui.Image> croppedFaces = [];
     for (var face in faces) {
       final faceRect = face.boundingBox;
       final recorder = ui.PictureRecorder();
@@ -103,9 +96,16 @@ class _HomeScreenState extends State<HomeScreen> {
       final picture = recorder.endRecording();
       final img = await picture.toImage(faceRect.width.toInt(), faceRect.height.toInt());
       croppedFaces.add(img);
+      //pass image in byte Start
+      final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData != null) {
+        final uint8list = byteData.buffer.asUint8List();
+        croppedFacesData.add(uint8list);
+      }
     }
+    // pass image in byte end
+    setState(() {});
 
-    return croppedFaces;
   }
 
 
@@ -113,7 +113,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Image to Text and Face ID'),
+        title: const Text('Image to Text and Face '),
       ),
       body: Padding(
         padding: const EdgeInsets.all(12.0),
@@ -121,7 +121,7 @@ class _HomeScreenState extends State<HomeScreen> {
           children: <Widget>[
             _image != null
                 ? Image.file(_image!)
-                : Text('No image selected'),
+                : Icon(Icons.image,size: 120,),
             SizedBox(height: 20),
 
             _faces.isNotEmpty
@@ -135,32 +135,43 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             )
                 : Container(),
-
-            // ElevatedButton(
-            //   onPressed: () => pickImage(ImageSource.camera),
-            //   child: Text('Pick Image from Camera'),
-            // ),
-            ElevatedButton(
-              onPressed: () => pickImage(ImageSource.gallery),
-              child: Text('Pick Image from Gallery'),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                ElevatedButton(
+                  onPressed: () => pickImage(ImageSource.camera),
+                  child: Text('Camera'),
+                ),
+                SizedBox(width: 20),
+                ElevatedButton(
+                  onPressed: () => pickImage(ImageSource.gallery),
+                  child: Text('Gallery'),
+                ),
+              ],
             ),
-            SizedBox(height: 20),
+
+
+            const SizedBox(height: 20),
             Text(_resultText),
-            SizedBox(height: 20),
+            const SizedBox(height:40),
             Text('Faces detected: ${_faces.length}'),
-            ElevatedButton(
-              onPressed: () {
-                if(croppedFaces != null){
+            const SizedBox(height:20),
+            InkWell(
+              onTap: (){
+                if(croppedFaces.isNotEmpty){
                   if (_faces.isNotEmpty) {
                     Navigator.push(context, MaterialPageRoute(
-                        builder: (context) => FaceDisplayPage(croppedFaces: croppedFaces!),
-                      ),
+                      builder: (context) => FaceDisplayPage(croppedFaces: croppedFaces, croppedFacesData: croppedFacesData,),
+                    ),
                     );
                   }
                 }
-
               },
-              child: Text('next'),
+              child: Container(
+                color: Colors.blue,
+                height: 45,
+                child: const Center(child: Text("All Detect Faces",style: TextStyle(fontSize: 22,color: Colors.white),)),
+              ),
             ),
           ],
         ),
@@ -190,7 +201,6 @@ class FacePainter extends CustomPainter {
 
     }
   }
-
   @override
   void paint(ui.Canvas canvas, ui.Size size) {
     final Paint boundingBoxPaint = Paint()
